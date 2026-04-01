@@ -266,20 +266,11 @@ def main():
     )
     parser.add_argument(
         "--categories", nargs="+",
-        default=["Passenger Comforts", "Railway Models"],
-        help="Category names to filter by (default: 'Passenger Comforts' 'Railway Models')",
+        help="Filter by category names (e.g. 'Passenger Comforts' 'Railway Models')",
     )
     parser.add_argument(
-        "--before-year", type=int, default=1976,
-        help="Only include objects made before this year (default: 1976)",
-    )
-    parser.add_argument(
-        "--no-date-filter", action="store_true",
-        help="Disable the date filter",
-    )
-    parser.add_argument(
-        "--no-category-filter", action="store_true",
-        help="Disable the category filter",
+        "--before-year", type=int,
+        help="Only include objects made before this year (e.g. 1976)",
     )
     parser.add_argument(
         "--batch-size", type=int, default=1000,
@@ -305,8 +296,8 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = args.output or os.path.join(output_dir, f"objects_export_{timestamp}.csv")
 
-    categories = [] if args.no_category_filter else args.categories
-    before_year = None if args.no_date_filter else args.before_year
+    categories = args.categories or []
+    before_year = args.before_year
 
     query = build_query(categories, before_year)
 

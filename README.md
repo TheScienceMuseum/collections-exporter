@@ -43,9 +43,9 @@ media_path = https://coimages.sciencemuseumgroup.org.uk/
 
 ## Usage
 
-### Basic export (default filters)
+### Export all Mimsy objects
 
-Exports Mimsy object records in the "Passenger Comforts" and "Railway Models" categories, made before 1976:
+With no filters, exports all Mimsy object records:
 
 ```bash
 python exporter.py
@@ -53,29 +53,22 @@ python exporter.py
 
 Output files are timestamped: `exports/objects_export_20260401_120000.csv`
 
-### Custom output path
+### Filter by category and date
 
 ```bash
-python exporter.py -o my_export.csv
+python exporter.py --categories "Passenger Comforts" "Railway Models" --before-year 1976
 ```
 
-### Custom filters
+### Filter by category only
 
 ```bash
-# Different categories
 python exporter.py --categories "Locomotives" "Rolling Stock"
+```
 
-# Different date cutoff
+### Filter by date only
+
+```bash
 python exporter.py --before-year 2000
-
-# No date filter
-python exporter.py --no-date-filter
-
-# No category filter
-python exporter.py --no-category-filter
-
-# Export everything (no filters)
-python exporter.py --no-category-filter --no-date-filter
 ```
 
 ### Include image data
@@ -83,7 +76,13 @@ python exporter.py --no-category-filter --no-date-filter
 Add `--include-images` to append image path, licence, copyright, and credit columns for the first image on each record:
 
 ```bash
-python exporter.py --include-images
+python exporter.py --categories "Railway Models" --include-images
+```
+
+### Custom output path
+
+```bash
+python exporter.py -o my_export.csv
 ```
 
 ### Dry run
@@ -91,24 +90,22 @@ python exporter.py --include-images
 Preview the query and document count without exporting:
 
 ```bash
-python exporter.py --dry-run
+python exporter.py --categories "Passenger Comforts" --dry-run
 ```
 
 ### All options
 
 ```
 usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [--categories CATEGORIES [CATEGORIES ...]]
-                   [--before-year BEFORE_YEAR] [--no-date-filter] [--no-category-filter]
-                   [--include-images] [--batch-size BATCH_SIZE] [--dry-run]
+                   [--before-year BEFORE_YEAR] [--include-images]
+                   [--batch-size BATCH_SIZE] [--dry-run]
 
 options:
   -h, --help            show this help message and exit
   -c, --config CONFIG   Path to config file (default: .config)
   -o, --output OUTPUT   Output CSV file path (default: exports/objects_export_<timestamp>.csv)
-  --categories          Category names to filter by (default: 'Passenger Comforts' 'Railway Models')
-  --before-year         Only include objects made before this year (default: 1976)
-  --no-date-filter      Disable the date filter
-  --no-category-filter  Disable the category filter
+  --categories          Filter by category names (e.g. 'Passenger Comforts' 'Railway Models')
+  --before-year         Only include objects made before this year (e.g. 1976)
   --include-images      Include image path, licence, copyright, and credit columns
   --batch-size          Scroll batch size (default: 1000)
   --dry-run             Show the query and estimated count without exporting
