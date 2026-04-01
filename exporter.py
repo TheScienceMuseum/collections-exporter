@@ -132,6 +132,7 @@ IMAGE_SOURCE_FIELDS = SOURCE_FIELDS + ["multimedia"]
 
 CSV_HEADERS = [
     "identifier",
+    "uid",
     "title",
     "object_name",
     "description",
@@ -198,6 +199,7 @@ def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, o
 
     row = {
         "identifier": get_primary_value(source.get("identifier")),
+        "uid": uid,
         "title": title,
         "object_name": get_object_name(source),
         "description": get_primary_value(source.get("description")),
