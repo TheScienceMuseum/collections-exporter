@@ -100,20 +100,27 @@ def build_url(base_url: str, uid: str, title: str) -> str:
     return f"{base_url}/objects/{uid}/{slug}"
 
 
-def build_query(categories: list, before_year: Optional[int]) -> dict:
+def build_query(categories: list, exclude_categories: list, before_year: Optional[int]) -> dict:
     """Build the ES query for Mimsy object records with given filters."""
     must = [
         {"term": {"@admin.source": "Mimsy XG"}},
         {"term": {"@datatype.base": "object"}},
     ]
+    must_not = []
 
     if categories:
         must.append({"terms": {"category.name.keyword": categories}})
 
+    if exclude_categories:
+        must_not.append({"terms": {"category.name.keyword": exclude_categories}})
+
     if before_year is not None:
         must.append({"range": {"creation.date.to": {"lt": str(before_year)}}})
 
-    return {"bool": {"must": must}}
+    query = {"bool": {"must": must}}
+    if must_not:
+        query["bool"]["must_not"] = must_not
+    return query
 
 
 SOURCE_FIELDS = [
@@ -298,6 +305,10 @@ def main():
         help="Filter by category names (overrides export config)",
     )
     parser.add_argument(
+        "--exclude-categories", nargs="+",
+        help="Exclude these category names (overrides export config)",
+    )
+    parser.add_argument(
         "--before-year", type=int,
         help="Only include objects made before this year (overrides export config)",
     )
@@ -334,6 +345,7 @@ def main():
     output_dir = config.get("export", "output_dir", fallback="exports")
 
     categories = args.categories or export_cfg.get("categories", [])
+    exclude_categories = args.exclude_categories or export_cfg.get("exclude_categories", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
     include_images = args.include_images or export_cfg.get("include_images", False)
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
@@ -345,7 +357,7 @@ def main():
     os.makedirs(export_folder, exist_ok=True)
     output_path = os.path.join(export_folder, "objects.csv")
 
-    query = build_query(categories, before_year)
+    query = build_query(categories, exclude_categories, before_year)
 
     es = create_es_client(es_node)
 
@@ -359,6 +371,8 @@ def main():
     print(f"Exporting to {export_folder}/")
     if categories:
         print(f"  Categories: {', '.join(categories)}")
+    if exclude_categories:
+        print(f"  Excluding: {', '.join(exclude_categories)}")
     if before_year is not None:
         print(f"  Made before: {before_year}")
 
@@ -382,6 +396,8 @@ def main():
     summary_lines.append(f"Source: Mimsy XG objects")
     if categories:
         summary_lines.append(f"Categories: {', '.join(categories)}")
+    if exclude_categories:
+        summary_lines.append(f"Excluded categories: {', '.join(exclude_categories)}")
     if before_year is not None:
         summary_lines.append(f"Made before: {before_year}")
     if include_images:
