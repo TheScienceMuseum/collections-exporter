@@ -1,0 +1,8 @@
+[elasticsearch]
+node = http://localhost:9200
+index = ciim
+
+[export]
+output_dir = exports
+base_url = https://collection.sciencemuseumgroup.org.uk
+media_path = https://coimages.sciencemuseumgroup.org.uk/
