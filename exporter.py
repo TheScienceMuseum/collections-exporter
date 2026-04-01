@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
+import requests
 from elasticsearch import Elasticsearch
 from slugify import slugify
 
@@ -171,7 +172,7 @@ OPEN_LICENCES = [
 EMPTY_IMAGE_FIELDS = {"image_path": "", "image_licence": "", "image_copyright": "", "image_credit": ""}
 
 
-def get_image_fields(source: dict, media_path: str, open_licence_only: bool = True) -> dict:
+def get_image_fields(source: dict, media_path: str, open_licence_only: bool = True, download_images: bool = False) -> dict:
     """Extract first multimedia medium image path and legal fields."""
     multimedia = source.get("multimedia", [])
     if not multimedia:
@@ -185,16 +186,25 @@ def get_image_fields(source: dict, media_path: str, open_licence_only: bool = Tr
         return EMPTY_IMAGE_FIELDS
 
     location = first.get("@processed", {}).get("medium", {}).get("location", "")
+    if not location:
+        return EMPTY_IMAGE_FIELDS
+
+    if download_images:
+        image_path = f"images/{location}"
+    else:
+        image_path = f"{media_path}{location}"
 
     return {
-        "image_path": f"{media_path}{location}" if location else "",
+        "image_path": image_path,
+        "_remote_url": f"{media_path}{location}" if download_images else "",
+        "_local_path": f"images/{location}" if download_images else "",
         "image_licence": licence,
         "image_copyright": rights.get("copyright", ""),
         "image_credit": first.get("credit", {}).get("value", ""),
     }
 
 
-def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, open_licence_only: bool = True) -> dict:
+def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, open_licence_only: bool = True, download_images: bool = False) -> dict:
     """Extract a single CSV row from an ES _source document."""
     uid = source.get("@admin", {}).get("uid", "")
     title = get_primary_value(source.get("title"))
@@ -221,7 +231,12 @@ def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, o
     }
 
     if media_path is not None:
-        row.update(get_image_fields(source, media_path, open_licence_only))
+        image_fields = get_image_fields(source, media_path, open_licence_only, download_images)
+        remote_url = image_fields.pop("_remote_url", "")
+        local_path = image_fields.pop("_local_path", "")
+        row.update(image_fields)
+        row["_remote_url"] = remote_url
+        row["_local_path"] = local_path
 
     return row
 
@@ -235,14 +250,16 @@ def export_objects(
     batch_size: int = 1000,
     media_path: Optional[str] = None,
     open_licence_only: bool = True,
-) -> int:
-    """Export matching objects to CSV using scroll API. Returns row count."""
+    download_images: bool = False,
+) -> tuple:
+    """Export matching objects to CSV using scroll API. Returns (row_count, downloads)."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     headers = IMAGE_CSV_HEADERS if media_path else CSV_HEADERS
     source_fields = IMAGE_SOURCE_FIELDS if media_path else SOURCE_FIELDS
 
     count = 0
+    downloads = []
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
         writer.writeheader()
@@ -260,7 +277,11 @@ def export_objects(
 
         while hits:
             for hit in hits:
-                row = extract_row(hit["_source"], base_url, media_path, open_licence_only)
+                row = extract_row(hit["_source"], base_url, media_path, open_licence_only, download_images)
+                remote_url = row.pop("_remote_url", "")
+                local_path = row.pop("_local_path", "")
+                if remote_url and local_path:
+                    downloads.append((remote_url, local_path))
                 writer.writerow(row)
                 count += 1
             if count % 5000 == 0:
@@ -275,7 +296,34 @@ def export_objects(
         except Exception:
             pass  # Scroll expires naturally; some proxies block DELETE
 
-    return count
+    return count, downloads
+
+
+def download_images(downloads: list, export_folder: str):
+    """Download images to the export folder."""
+    total = len(downloads)
+    print(f"Downloading {total} images...")
+    session = requests.Session()
+    downloaded = 0
+    failed = 0
+
+    for remote_url, local_path in downloads:
+        dest = os.path.join(export_folder, local_path)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        try:
+            resp = session.get(remote_url, timeout=30)
+            resp.raise_for_status()
+            with open(dest, "wb") as f:
+                f.write(resp.content)
+            downloaded += 1
+        except Exception as e:
+            print(f"  Failed: {remote_url} ({e})")
+            failed += 1
+
+        if (downloaded + failed) % 100 == 0:
+            print(f"  {downloaded + failed}/{total} images processed...")
+
+    print(f"  Downloaded: {downloaded}, failed: {failed}")
 
 
 def load_export_config(path: str) -> dict:
@@ -325,6 +373,10 @@ def main():
         help="Include images with any licence (default: only open licences — CC and OGL)",
     )
     parser.add_argument(
+        "--download-images", action="store_true",
+        help="Download images to a local images/ folder within the export (implies --include-images)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Show the query and estimated count without exporting",
     )
@@ -347,7 +399,8 @@ def main():
     categories = args.categories or export_cfg.get("categories", [])
     exclude_categories = args.exclude_categories or export_cfg.get("exclude_categories", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
-    include_images = args.include_images or export_cfg.get("include_images", False)
+    dl_images = args.download_images or export_cfg.get("download_images", False)
+    include_images = args.include_images or export_cfg.get("include_images", False) or dl_images
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -381,8 +434,13 @@ def main():
         media_path = config.get("export", "media_path")
         licence_mode = "all" if not open_licence_only else "open only (CC / OGL)"
         print(f"  Including images: yes ({licence_mode})")
+        if dl_images:
+            print(f"  Downloading images: yes")
 
-    count = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path, open_licence_only)
+    count, downloads = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path, open_licence_only, dl_images)
+
+    if downloads:
+        download_images(downloads, export_folder)
 
     # Write export summary
     summary_lines = []
@@ -402,6 +460,8 @@ def main():
         summary_lines.append(f"Made before: {before_year}")
     if include_images:
         summary_lines.append(f"Images: {licence_mode}")
+        if dl_images:
+            summary_lines.append(f"Images downloaded: {len(downloads)}")
     if args.export_config:
         summary_lines.append(f"Export config: {args.export_config}")
     summary_lines.append(f"Output: objects.csv")
