@@ -1,5 +1,5 @@
 [elasticsearch]
-node = http://localhost:9200
+node = http://user:pass@your-es-host/path-prefix/
 index = ciim
 
 [export]
