@@ -152,25 +152,40 @@ IMAGE_CSV_HEADERS = CSV_HEADERS + [
 ]
 
 
-def get_image_fields(source: dict, media_path: str) -> dict:
+OPEN_LICENCES = [
+    "CC BY-NC-SA 4.0",
+    "CC-BY-NC-SA 4.0",
+    "CC BY-NC-ND 4.0",
+    "Open Government Licence v3.0",
+]
+
+EMPTY_IMAGE_FIELDS = {"image_path": "", "image_licence": "", "image_copyright": "", "image_credit": ""}
+
+
+def get_image_fields(source: dict, media_path: str, open_licence_only: bool = True) -> dict:
     """Extract first multimedia medium image path and legal fields."""
     multimedia = source.get("multimedia", [])
     if not multimedia:
-        return {"image_path": "", "image_licence": "", "image_copyright": "", "image_credit": ""}
+        return EMPTY_IMAGE_FIELDS
 
     first = multimedia[0]
-    location = first.get("@processed", {}).get("medium", {}).get("location", "")
     rights = first.get("legal", {}).get("rights", [{}])[0] if first.get("legal", {}).get("rights") else {}
+    licence = rights.get("licence", "")
+
+    if open_licence_only and licence not in OPEN_LICENCES:
+        return EMPTY_IMAGE_FIELDS
+
+    location = first.get("@processed", {}).get("medium", {}).get("location", "")
 
     return {
         "image_path": f"{media_path}{location}" if location else "",
-        "image_licence": rights.get("licence", ""),
+        "image_licence": licence,
         "image_copyright": rights.get("copyright", ""),
         "image_credit": first.get("credit", {}).get("value", ""),
     }
 
 
-def extract_row(source: dict, base_url: str, media_path: Optional[str] = None) -> dict:
+def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, open_licence_only: bool = True) -> dict:
     """Extract a single CSV row from an ES _source document."""
     uid = source.get("@admin", {}).get("uid", "")
     title = get_primary_value(source.get("title"))
@@ -196,7 +211,7 @@ def extract_row(source: dict, base_url: str, media_path: Optional[str] = None) -
     }
 
     if media_path is not None:
-        row.update(get_image_fields(source, media_path))
+        row.update(get_image_fields(source, media_path, open_licence_only))
 
     return row
 
@@ -209,6 +224,7 @@ def export_objects(
     output_path: str,
     batch_size: int = 1000,
     media_path: Optional[str] = None,
+    open_licence_only: bool = True,
 ) -> int:
     """Export matching objects to CSV using scroll API. Returns row count."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -234,7 +250,7 @@ def export_objects(
 
         while hits:
             for hit in hits:
-                row = extract_row(hit["_source"], base_url, media_path)
+                row = extract_row(hit["_source"], base_url, media_path, open_licence_only)
                 writer.writerow(row)
                 count += 1
             if count % 5000 == 0:
@@ -291,6 +307,10 @@ def main():
         help="Include image path, licence, copyright, and credit columns",
     )
     parser.add_argument(
+        "--all-licences", action="store_true",
+        help="Include images with any licence (default: only open licences — CC and OGL)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Show the query and estimated count without exporting",
     )
@@ -313,6 +333,7 @@ def main():
     categories = args.categories or export_cfg.get("categories", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
     include_images = args.include_images or export_cfg.get("include_images", False)
+    open_licence_only = not (args.all_licences or export_cfg.get("all_licences", False))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     default_filename = f"objects_export_{timestamp}.csv"
@@ -338,9 +359,10 @@ def main():
     media_path = None
     if include_images:
         media_path = config.get("export", "media_path")
-        print(f"  Including images: yes")
+        licence_mode = "all" if not open_licence_only else "open only (CC / OGL)"
+        print(f"  Including images: yes ({licence_mode})")
 
-    count = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path)
+    count = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path, open_licence_only)
     print(f"Done. Exported {count} records to {output_path}")
 
 
