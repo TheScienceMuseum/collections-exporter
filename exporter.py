@@ -252,25 +252,35 @@ def export_objects(
     return count
 
 
+def load_export_config(path: str) -> dict:
+    """Load an export config JSON file."""
+    with open(path, "r") as f:
+        return json.load(f)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Export data from the SMG Collections Online Elasticsearch index."
     )
     parser.add_argument(
+        "export_config", nargs="?",
+        help="Path to an export config JSON file (e.g. export_configs/railway_pre1976.json)",
+    )
+    parser.add_argument(
         "-c", "--config", default=".config",
-        help="Path to config file (default: .config)",
+        help="Path to server config file (default: .config)",
     )
     parser.add_argument(
         "-o", "--output",
-        help="Output CSV file path (default: exports/objects_export.csv)",
+        help="Output CSV file path (overrides export config)",
     )
     parser.add_argument(
         "--categories", nargs="+",
-        help="Filter by category names (e.g. 'Passenger Comforts' 'Railway Models')",
+        help="Filter by category names (overrides export config)",
     )
     parser.add_argument(
         "--before-year", type=int,
-        help="Only include objects made before this year (e.g. 1976)",
+        help="Only include objects made before this year (overrides export config)",
     )
     parser.add_argument(
         "--batch-size", type=int, default=1000,
@@ -286,6 +296,13 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Load export config if provided, then let CLI args override
+    export_cfg = {}
+    if args.export_config:
+        export_cfg = load_export_config(args.export_config)
+        print(f"Using export config: {export_cfg.get('name', args.export_config)}")
+
     config = load_config(args.config)
 
     es_node = config.get("elasticsearch", "node")
@@ -293,11 +310,13 @@ def main():
     base_url = config.get("export", "base_url")
     output_dir = config.get("export", "output_dir", fallback="exports")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = args.output or os.path.join(output_dir, f"objects_export_{timestamp}.csv")
+    categories = args.categories or export_cfg.get("categories", [])
+    before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
+    include_images = args.include_images or export_cfg.get("include_images", False)
 
-    categories = args.categories or []
-    before_year = args.before_year
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_filename = f"objects_export_{timestamp}.csv"
+    output_path = args.output or export_cfg.get("output") or os.path.join(output_dir, default_filename)
 
     query = build_query(categories, before_year)
 
@@ -317,7 +336,7 @@ def main():
         print(f"  Made before: {before_year}")
 
     media_path = None
-    if args.include_images:
+    if include_images:
         media_path = config.get("export", "media_path")
         print(f"  Including images: yes")
 

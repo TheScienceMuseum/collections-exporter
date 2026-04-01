@@ -1,0 +1,7 @@
+{
+  "name": "Railway objects pre-1976",
+  "description": "Passenger Comforts and Railway Models made before 1976",
+  "categories": ["Passenger Comforts", "Railway Models"],
+  "before_year": 1976,
+  "include_images": true
+}

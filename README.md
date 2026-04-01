@@ -43,46 +43,68 @@ media_path = https://coimages.sciencemuseumgroup.org.uk/
 
 ## Usage
 
-### Export all Mimsy objects
+### Export configs
 
-With no filters, exports all Mimsy object records:
+The simplest way to run an export is with an export config file. These are JSON files in `export_configs/` that define the filters and options for a particular export:
 
 ```bash
+python exporter.py export_configs/railway_pre1976.json
+```
+
+An export config looks like this:
+
+```json
+{
+  "name": "Railway objects pre-1976",
+  "description": "Passenger Comforts and Railway Models made before 1976",
+  "categories": ["Passenger Comforts", "Railway Models"],
+  "before_year": 1976,
+  "include_images": true
+}
+```
+
+Available fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Display name shown when the export runs |
+| `description` | string | Human-readable description of the export |
+| `categories` | string[] | Category names to filter by |
+| `before_year` | int | Only include objects made before this year |
+| `include_images` | bool | Include image path, licence, copyright, and credit columns |
+| `output` | string | Output file path (overrides default timestamped name) |
+
+To create a new export, add a JSON file to `export_configs/` and run it:
+
+```bash
+python exporter.py export_configs/my_export.json
+```
+
+### CLI overrides
+
+Any CLI argument will override the corresponding export config value:
+
+```bash
+# Use config but override the date filter
+python exporter.py export_configs/railway_pre1976.json --before-year 2000
+
+# Use config but send output to a specific file
+python exporter.py export_configs/railway_pre1976.json -o custom_output.csv
+```
+
+### Running without an export config
+
+You can also run directly with CLI arguments:
+
+```bash
+# Export all Mimsy objects
 python exporter.py
-```
 
-Output files are timestamped: `exports/objects_export_20260401_120000.csv`
-
-### Filter by category and date
-
-```bash
+# Filter by category and date
 python exporter.py --categories "Passenger Comforts" "Railway Models" --before-year 1976
-```
 
-### Filter by category only
-
-```bash
-python exporter.py --categories "Locomotives" "Rolling Stock"
-```
-
-### Filter by date only
-
-```bash
-python exporter.py --before-year 2000
-```
-
-### Include image data
-
-Add `--include-images` to append image path, licence, copyright, and credit columns for the first image on each record:
-
-```bash
+# Include image data
 python exporter.py --categories "Railway Models" --include-images
-```
-
-### Custom output path
-
-```bash
-python exporter.py -o my_export.csv
 ```
 
 ### Dry run
@@ -90,7 +112,7 @@ python exporter.py -o my_export.csv
 Preview the query and document count without exporting:
 
 ```bash
-python exporter.py --categories "Passenger Comforts" --dry-run
+python exporter.py export_configs/railway_pre1976.json --dry-run
 ```
 
 ### All options
@@ -99,17 +121,23 @@ python exporter.py --categories "Passenger Comforts" --dry-run
 usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [--categories CATEGORIES [CATEGORIES ...]]
                    [--before-year BEFORE_YEAR] [--include-images]
                    [--batch-size BATCH_SIZE] [--dry-run]
+                   [export_config]
+
+positional arguments:
+  export_config         Path to an export config JSON file (e.g. export_configs/railway_pre1976.json)
 
 options:
   -h, --help            show this help message and exit
-  -c, --config CONFIG   Path to config file (default: .config)
-  -o, --output OUTPUT   Output CSV file path (default: exports/objects_export_<timestamp>.csv)
-  --categories          Filter by category names (e.g. 'Passenger Comforts' 'Railway Models')
-  --before-year         Only include objects made before this year (e.g. 1976)
+  -c, --config CONFIG   Path to server config file (default: .config)
+  -o, --output OUTPUT   Output CSV file path (overrides export config)
+  --categories          Filter by category names (overrides export config)
+  --before-year         Only include objects made before this year (overrides export config)
   --include-images      Include image path, licence, copyright, and credit columns
   --batch-size          Scroll batch size (default: 1000)
   --dry-run             Show the query and estimated count without exporting
 ```
+
+Output files are timestamped by default: `exports/objects_export_20260401_120000.csv`
 
 ## CSV Output Fields
 
@@ -127,7 +155,7 @@ options:
 | measurements | Measurements display string |
 | url | Public collection URL |
 
-With `--include-images`:
+With `--include-images` or `"include_images": true`:
 
 | Field | Source |
 |-------|--------|
