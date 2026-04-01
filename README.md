@@ -72,7 +72,7 @@ Available fields:
 | `categories` | string[] | Category names to filter by |
 | `before_year` | int | Only include objects made before this year |
 | `include_images` | bool | Include image path, licence, copyright, and credit columns |
-| `all_licences` | bool | Include images with any licence (default: only open licences) |
+| `all_image_licences` | bool | Include images with any licence (default: only open licences) |
 | `output` | string | Output file path (overrides default timestamped name) |
 
 To create a new export, add a JSON file to `export_configs/` and run it:
@@ -108,7 +108,7 @@ python exporter.py --categories "Passenger Comforts" "Railway Models" --before-y
 python exporter.py --categories "Railway Models" --include-images
 
 # Include images with any licence
-python exporter.py --categories "Railway Models" --include-images --all-licences
+python exporter.py --categories "Railway Models" --include-images --all-image-licences
 ```
 
 ### Dry run
@@ -123,7 +123,7 @@ python exporter.py export_configs/railway_pre1976.json --dry-run
 
 ```
 usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [--categories CATEGORIES [CATEGORIES ...]]
-                   [--before-year BEFORE_YEAR] [--include-images] [--all-licences]
+                   [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
                    [--batch-size BATCH_SIZE] [--dry-run]
                    [export_config]
 
@@ -137,7 +137,7 @@ options:
   --categories          Filter by category names (overrides export config)
   --before-year         Only include objects made before this year (overrides export config)
   --include-images      Include image path, licence, copyright, and credit columns
-  --all-licences        Include images with any licence (default: only open licences — CC and OGL)
+  --all-image-licences        Include images with any licence (default: only open licences — CC and OGL)
   --batch-size          Scroll batch size (default: 1000)
   --dry-run             Show the query and estimated count without exporting
 ```

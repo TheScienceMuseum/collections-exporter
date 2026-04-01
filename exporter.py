@@ -307,7 +307,7 @@ def main():
         help="Include image path, licence, copyright, and credit columns",
     )
     parser.add_argument(
-        "--all-licences", action="store_true",
+        "--all-image-licences", action="store_true",
         help="Include images with any licence (default: only open licences — CC and OGL)",
     )
     parser.add_argument(
@@ -333,7 +333,7 @@ def main():
     categories = args.categories or export_cfg.get("categories", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
     include_images = args.include_images or export_cfg.get("include_images", False)
-    open_licence_only = not (args.all_licences or export_cfg.get("all_licences", False))
+    open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     default_filename = f"objects_export_{timestamp}.csv"
