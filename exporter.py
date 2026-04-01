@@ -85,7 +85,8 @@ def get_measurements_display(source: dict) -> str:
     if not measurements:
         return ""
     dimensions = measurements.get("dimensions", [])
-    return get_primary_value(dimensions)
+    value = get_primary_value(dimensions)
+    return value.lstrip(": ")
 
 
 def get_object_name(source: dict) -> str:
