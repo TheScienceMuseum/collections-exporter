@@ -70,10 +70,12 @@ Available fields:
 | `name` | string | Display name shown when the export runs |
 | `description` | string | Human-readable description of the export |
 | `categories` | string[] | Category names to filter by |
+| `exclude_categories` | string[] | Category names to exclude |
 | `before_year` | int | Only include objects made before this year |
 | `include_images` | bool | Include image path, licence, copyright, and credit columns |
 | `all_image_licences` | bool | Include images with any licence (default: only open licences) |
-| `output` | string | Output file path (overrides default timestamped name) |
+| `download_images` | bool | Download images locally (implies `include_images`) |
+| `output` | string | Output folder path (overrides default timestamped folder) |
 
 To create a new export, add a JSON file to `export_configs/` and run it:
 
@@ -89,8 +91,8 @@ Any CLI argument will override the corresponding export config value:
 # Use config but override the date filter
 python exporter.py export_configs/railway_pre1976.json --before-year 2000
 
-# Use config but send output to a specific file
-python exporter.py export_configs/railway_pre1976.json -o custom_output.csv
+# Use config but send output to a specific folder
+python exporter.py export_configs/railway_pre1976.json -o my_export_folder
 ```
 
 ### Running without an export config
@@ -104,11 +106,37 @@ python exporter.py
 # Filter by category and date
 python exporter.py --categories "Passenger Comforts" "Railway Models" --before-year 1976
 
+# Exclude specific categories
+python exporter.py --exclude-categories "Photographs" "Art"
+
 # Include image data (open licences only by default)
 python exporter.py --categories "Railway Models" --include-images
 
 # Include images with any licence
 python exporter.py --categories "Railway Models" --include-images --all-image-licences
+
+# Download images locally
+python exporter.py --categories "Railway Models" --download-images
+```
+
+### Download images
+
+Use `--download-images` to save images into a local `images/` folder within the export. The `image_path` column in the CSV will reference local paths instead of remote URLs:
+
+```bash
+python exporter.py --categories "Railway Models" --before-year 1850 --download-images
+```
+
+This produces:
+
+```
+exports/export_20260401_140513/
+├── objects.csv          # image_path = images/288/534/medium_image.jpg
+├── export_info.txt
+└── images/
+    ├── 288/534/medium_image.jpg
+    ├── 105/964/medium_other.jpg
+    └── ...
 ```
 
 ### Dry run
@@ -123,32 +151,44 @@ python exporter.py export_configs/railway_pre1976.json --dry-run
 
 ```
 usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [--categories CATEGORIES [CATEGORIES ...]]
+                   [--exclude-categories EXCLUDE [EXCLUDE ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
-                   [--batch-size BATCH_SIZE] [--dry-run]
+                   [--download-images] [--batch-size BATCH_SIZE] [--dry-run]
                    [export_config]
 
 positional arguments:
-  export_config         Path to an export config JSON file (e.g. export_configs/railway_pre1976.json)
+  export_config           Path to an export config JSON file
 
 options:
-  -h, --help            show this help message and exit
-  -c, --config CONFIG   Path to server config file (default: .config)
-  -o, --output OUTPUT   Output CSV file path (overrides export config)
-  --categories          Filter by category names (overrides export config)
-  --before-year         Only include objects made before this year (overrides export config)
-  --include-images      Include image path, licence, copyright, and credit columns
-  --all-image-licences        Include images with any licence (default: only open licences — CC and OGL)
-  --batch-size          Scroll batch size (default: 1000)
-  --dry-run             Show the query and estimated count without exporting
+  -h, --help              show this help message and exit
+  -c, --config CONFIG     Path to server config file (default: .config)
+  -o, --output OUTPUT     Output folder path (default: exports/export_<timestamp>/)
+  --categories            Filter by category names (overrides export config)
+  --exclude-categories    Exclude these category names (overrides export config)
+  --before-year           Only include objects made before this year (overrides export config)
+  --include-images        Include image path, licence, copyright, and credit columns
+  --all-image-licences    Include images with any licence (default: only open licences)
+  --download-images       Download images locally (implies --include-images)
+  --batch-size            Scroll batch size (default: 1000)
+  --dry-run               Show the query and estimated count without exporting
 ```
 
-Output files are timestamped by default: `exports/objects_export_20260401_120000.csv`
+## Output
+
+Each export creates a timestamped folder:
+
+```
+exports/export_20260401_120000/
+├── objects.csv        # the exported data
+└── export_info.txt    # summary of settings and record count
+```
 
 ## CSV Output Fields
 
 | Field | Source |
 |-------|--------|
 | identifier | Primary identifier (accession number) |
+| uid | Collection record ID (e.g. co12345) |
 | title | Primary title |
 | object_name | Primary name |
 | description | Primary description |
@@ -160,11 +200,11 @@ Output files are timestamped by default: `exports/objects_export_20260401_120000
 | measurements | Measurements display string |
 | url | Public collection URL |
 
-With `--include-images` or `"include_images": true`:
+With `--include-images` or `--download-images`:
 
 | Field | Source |
 |-------|--------|
-| image_path | Full URL to medium-sized image |
-| image_licence | `multimedia[0].legal.rights[0].licence` |
-| image_copyright | `multimedia[0].legal.rights[0].copyright` |
-| image_credit | `multimedia[0].credit.value` |
+| image_path | URL to medium image, or local path if downloading |
+| image_licence | Image licence (e.g. CC BY-NC-SA 4.0) |
+| image_copyright | Image copyright holder |
+| image_credit | Image credit line |
