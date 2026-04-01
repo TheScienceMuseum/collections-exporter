@@ -291,7 +291,7 @@ def main():
     )
     parser.add_argument(
         "-o", "--output",
-        help="Output CSV file path (overrides export config)",
+        help="Output folder path (default: exports/export_<timestamp>/)",
     )
     parser.add_argument(
         "--categories", nargs="+",
@@ -339,8 +339,11 @@ def main():
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_filename = f"objects_export_{timestamp}.csv"
-    output_path = args.output or export_cfg.get("output") or os.path.join(output_dir, default_filename)
+
+    # Create timestamped export folder
+    export_folder = args.output or os.path.join(output_dir, f"export_{timestamp}")
+    os.makedirs(export_folder, exist_ok=True)
+    output_path = os.path.join(export_folder, "objects.csv")
 
     query = build_query(categories, before_year)
 
@@ -353,7 +356,7 @@ def main():
         print(f"\nMatching documents: {result['count']}")
         return
 
-    print(f"Exporting objects to {output_path}...")
+    print(f"Exporting to {export_folder}/")
     if categories:
         print(f"  Categories: {', '.join(categories)}")
     if before_year is not None:
@@ -366,7 +369,32 @@ def main():
         print(f"  Including images: yes ({licence_mode})")
 
     count = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path, open_licence_only)
-    print(f"Done. Exported {count} records to {output_path}")
+
+    # Write export summary
+    summary_lines = []
+    if export_cfg.get("name"):
+        summary_lines.append(f"Export: {export_cfg['name']}")
+    if export_cfg.get("description"):
+        summary_lines.append(f"Description: {export_cfg['description']}")
+    summary_lines.append(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    summary_lines.append(f"Records: {count}")
+    summary_lines.append(f"Index: {es_index}")
+    summary_lines.append(f"Source: Mimsy XG objects")
+    if categories:
+        summary_lines.append(f"Categories: {', '.join(categories)}")
+    if before_year is not None:
+        summary_lines.append(f"Made before: {before_year}")
+    if include_images:
+        summary_lines.append(f"Images: {licence_mode}")
+    if args.export_config:
+        summary_lines.append(f"Export config: {args.export_config}")
+    summary_lines.append(f"Output: objects.csv")
+
+    summary_path = os.path.join(export_folder, "export_info.txt")
+    with open(summary_path, "w") as f:
+        f.write("\n".join(summary_lines) + "\n")
+
+    print(f"Done. Exported {count} records to {export_folder}/")
 
 
 if __name__ == "__main__":
