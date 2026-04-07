@@ -403,10 +403,15 @@ def main():
     include_images = args.include_images or export_cfg.get("include_images", False) or dl_images
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d")
 
-    # Create timestamped export folder
-    export_folder = args.output or os.path.join(output_dir, f"export_{timestamp}")
+    # Create timestamped export folder, using config filename if available
+    if args.export_config:
+        config_name = os.path.splitext(os.path.basename(args.export_config))[0]
+        folder_name = f"{config_name}_{timestamp}"
+    else:
+        folder_name = f"export_{timestamp}"
+    export_folder = args.output or os.path.join(output_dir, folder_name)
     os.makedirs(export_folder, exist_ok=True)
     output_path = os.path.join(export_folder, "objects.csv")
 
