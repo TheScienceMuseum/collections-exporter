@@ -177,7 +177,7 @@ EMPTY_IMAGE_FIELDS = {"image_path": "", "image_licence": "", "image_copyright": 
 
 
 def get_image_fields(source: dict, media_path: str, open_licence_only: bool = True, download_images: bool = False) -> dict:
-    """Extract first multimedia medium image path and legal fields."""
+    """Extract first multimedia large image path and legal fields."""
     multimedia = source.get("multimedia", [])
     if not multimedia:
         return EMPTY_IMAGE_FIELDS
@@ -189,7 +189,7 @@ def get_image_fields(source: dict, media_path: str, open_licence_only: bool = Tr
     if open_licence_only and licence not in OPEN_LICENCES:
         return EMPTY_IMAGE_FIELDS
 
-    location = first.get("@processed", {}).get("medium", {}).get("location", "")
+    location = first.get("@processed", {}).get("large", {}).get("location", "")
     if not location:
         return EMPTY_IMAGE_FIELDS
 
