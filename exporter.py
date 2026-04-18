@@ -126,6 +126,8 @@ def build_query(categories: list, exclude_categories: list, before_year: Optiona
 
 SOURCE_FIELDS = [
     "@admin.uid",
+    "@admin.added",
+    "@admin.processed",
     "summary.title",
     "title",
     "description",
@@ -142,6 +144,8 @@ IMAGE_SOURCE_FIELDS = SOURCE_FIELDS + ["multimedia"]
 CSV_HEADERS = [
     "identifier",
     "uid",
+    "created",
+    "modified",
     "title",
     "object_name",
     "description",
@@ -204,9 +208,20 @@ def get_image_fields(source: dict, media_path: str, open_licence_only: bool = Tr
     }
 
 
+def format_epoch_ms(epoch_ms: Optional[int]) -> str:
+    """Convert an epoch-millisecond timestamp to ISO date string, or empty string if missing."""
+    if not epoch_ms:
+        return ""
+    try:
+        return datetime.utcfromtimestamp(epoch_ms / 1000).strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
 def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, open_licence_only: bool = True, download_images: bool = False) -> dict:
     """Extract a single CSV row from an ES _source document."""
-    uid = source.get("@admin", {}).get("uid", "")
+    admin = source.get("@admin", {})
+    uid = admin.get("uid", "")
     title = get_primary_value(source.get("title"))
     summary_title = source.get("summary", {}).get("title", "") or title
     creation = source.get("creation", {})
@@ -218,6 +233,8 @@ def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, o
     row = {
         "identifier": get_primary_value(source.get("identifier")),
         "uid": uid,
+        "created": format_epoch_ms(admin.get("added")),
+        "modified": format_epoch_ms(admin.get("processed")),
         "title": title,
         "object_name": get_object_name(source),
         "description": get_primary_value(source.get("description")),

@@ -189,6 +189,8 @@ exports/export_20260401_120000/
 |-------|--------|
 | identifier | Primary identifier (accession number) |
 | uid | Collection record ID (e.g. co12345) |
+| created | Record created date (UTC) |
+| modified | Record last modified date (UTC) |
 | title | Primary title |
 | object_name | Primary name |
 | description | Primary description |
