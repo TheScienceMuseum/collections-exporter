@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import csv
+import glob
 import json
 import os
 import sys
@@ -349,69 +350,21 @@ def load_export_config(path: str) -> dict:
         return json.load(f)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Export data from the SMG Collections Online Elasticsearch index."
-    )
-    parser.add_argument(
-        "export_config", nargs="?",
-        help="Path to an export config JSON file (e.g. export_configs/railway_pre1976.json)",
-    )
-    parser.add_argument(
-        "-c", "--config", default=".config",
-        help="Path to server config file (default: .config)",
-    )
-    parser.add_argument(
-        "-o", "--output",
-        help="Output folder path (default: exports/export_<timestamp>/)",
-    )
-    parser.add_argument(
-        "--categories", nargs="+",
-        help="Filter by category names (overrides export config)",
-    )
-    parser.add_argument(
-        "--exclude-categories", nargs="+",
-        help="Exclude these category names (overrides export config)",
-    )
-    parser.add_argument(
-        "--before-year", type=int,
-        help="Only include objects made before this year (overrides export config)",
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=1000,
-        help="Scroll batch size (default: 1000)",
-    )
-    parser.add_argument(
-        "--include-images", action="store_true",
-        help="Include image path, licence, copyright, and credit columns",
-    )
-    parser.add_argument(
-        "--all-image-licences", action="store_true",
-        help="Include images with any licence (default: only open licences — CC and OGL)",
-    )
-    parser.add_argument(
-        "--download-images", action="store_true",
-        help="Download images to a local images/ folder within the export (implies --include-images)",
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Show the query and estimated count without exporting",
-    )
-
-    args = parser.parse_args()
-
-    # Load export config if provided, then let CLI args override
-    export_cfg = {}
-    if args.export_config:
-        export_cfg = load_export_config(args.export_config)
-        print(f"Using export config: {export_cfg.get('name', args.export_config)}")
-
-    config = load_config(args.config)
-
-    es_node = config.get("elasticsearch", "node")
+def run_export(
+    export_config_path: Optional[str],
+    args: argparse.Namespace,
+    config: configparser.ConfigParser,
+    es: Elasticsearch,
+) -> int:
+    """Run a single export. Returns the number of records exported."""
     es_index = config.get("elasticsearch", "index")
     base_url = config.get("export", "base_url")
     output_dir = config.get("export", "output_dir", fallback="exports")
+
+    export_cfg = {}
+    if export_config_path:
+        export_cfg = load_export_config(export_config_path)
+        print(f"\nUsing export config: {export_cfg.get('name', export_config_path)}")
 
     categories = args.categories or export_cfg.get("categories", [])
     exclude_categories = args.exclude_categories or export_cfg.get("exclude_categories", [])
@@ -423,8 +376,8 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d")
 
     # Create timestamped export folder, using config filename if available
-    if args.export_config:
-        config_name = os.path.splitext(os.path.basename(args.export_config))[0]
+    if export_config_path:
+        config_name = os.path.splitext(os.path.basename(export_config_path))[0]
         folder_name = f"{config_name}_{timestamp}"
     else:
         folder_name = f"export_{timestamp}"
@@ -434,14 +387,12 @@ def main():
 
     query = build_query(categories, exclude_categories, before_year)
 
-    es = create_es_client(es_node)
-
     if args.dry_run:
         print("Query:")
         print(json.dumps(query, indent=2))
         result = es.count(index=es_index, body={"query": query})
-        print(f"\nMatching documents: {result['count']}")
-        return
+        print(f"Matching documents: {result['count']}\n")
+        return 0
 
     print(f"Exporting to {export_folder}/")
     if categories:
@@ -484,8 +435,8 @@ def main():
         summary_lines.append(f"Images: {licence_mode}")
         if dl_images:
             summary_lines.append(f"Images downloaded: {len(downloads)}")
-    if args.export_config:
-        summary_lines.append(f"Export config: {args.export_config}")
+    if export_config_path:
+        summary_lines.append(f"Export config: {export_config_path}")
     summary_lines.append(f"Output: objects.csv")
 
     summary_path = os.path.join(export_folder, "export_info.txt")
@@ -493,6 +444,99 @@ def main():
         f.write("\n".join(summary_lines) + "\n")
 
     print(f"Done. Exported {count} records to {export_folder}/")
+    return count
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Export data from the SMG Collections Online Elasticsearch index."
+    )
+    parser.add_argument(
+        "export_configs", nargs="*",
+        help="Path(s) to export config JSON file(s) (e.g. export_configs/railway_pre1976.json)",
+    )
+    parser.add_argument(
+        "-c", "--config", default=".config",
+        help="Path to server config file (default: .config)",
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output folder path (default: exports/<config>_<timestamp>/)",
+    )
+    parser.add_argument(
+        "-a", "--all", action="store_true", dest="run_all",
+        help="Run all export configs in export_configs/",
+    )
+    parser.add_argument(
+        "--categories", nargs="+",
+        help="Filter by category names (overrides export config)",
+    )
+    parser.add_argument(
+        "--exclude-categories", nargs="+",
+        help="Exclude these category names (overrides export config)",
+    )
+    parser.add_argument(
+        "--before-year", type=int,
+        help="Only include objects made before this year (overrides export config)",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=1000,
+        help="Scroll batch size (default: 1000)",
+    )
+    parser.add_argument(
+        "--include-images", action="store_true",
+        help="Include image path, licence, copyright, and credit columns",
+    )
+    parser.add_argument(
+        "--all-image-licences", action="store_true",
+        help="Include images with any licence (default: only open licences — CC and OGL)",
+    )
+    parser.add_argument(
+        "--download-images", action="store_true",
+        help="Download images to a local images/ folder within the export (implies --include-images)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show the query and estimated count without exporting",
+    )
+
+    args = parser.parse_args()
+
+    # Collect the list of config files to process
+    config_paths = list(args.export_configs)
+
+    if args.run_all:
+        all_configs = sorted(glob.glob("export_configs/*.json"))
+        if not all_configs:
+            print("Error: no JSON files found in export_configs/")
+            sys.exit(1)
+        config_paths = all_configs
+
+    if args.output and len(config_paths) > 1:
+        print("Error: --output cannot be used when running multiple export configs (each creates its own folder)")
+        sys.exit(1)
+
+    config = load_config(args.config)
+    es_node = config.get("elasticsearch", "node")
+    es = create_es_client(es_node)
+
+    if not config_paths:
+        # No configs specified — run a single export with CLI args only
+        run_export(None, args, config, es)
+        return
+
+    total_records = 0
+    for i, config_path in enumerate(config_paths, 1):
+        if len(config_paths) > 1:
+            print(f"\n{'='*60}")
+            print(f"Export {i}/{len(config_paths)}: {config_path}")
+            print(f"{'='*60}")
+        total_records += run_export(config_path, args, config, es)
+
+    if len(config_paths) > 1 and not args.dry_run:
+        print(f"\n{'='*60}")
+        print(f"All done. {len(config_paths)} exports completed, {total_records} total records.")
+        print(f"{'='*60}")
 
 
 if __name__ == "__main__":

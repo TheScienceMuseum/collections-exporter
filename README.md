@@ -83,6 +83,22 @@ To create a new export, add a JSON file to `export_configs/` and run it:
 python exporter.py export_configs/my_export.json
 ```
 
+### Running multiple exports
+
+Run all export configs in `export_configs/` in one go:
+
+```bash
+python exporter.py --all
+```
+
+Or specify multiple config files:
+
+```bash
+python exporter.py export_configs/railway_pre1976.json export_configs/medical_heritage_pre1925.json
+```
+
+Each config creates its own individual output folder as usual. A summary is printed at the end showing the total records exported across all configs.
+
 ### CLI overrides
 
 Any CLI argument will override the corresponding export config value:
@@ -150,19 +166,21 @@ python exporter.py export_configs/railway_pre1976.json --dry-run
 ### All options
 
 ```
-usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [--categories CATEGORIES [CATEGORIES ...]]
+usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [-a]
+                   [--categories CATEGORIES [CATEGORIES ...]]
                    [--exclude-categories EXCLUDE [EXCLUDE ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
                    [--download-images] [--batch-size BATCH_SIZE] [--dry-run]
-                   [export_config]
+                   [export_configs ...]
 
 positional arguments:
-  export_config           Path to an export config JSON file
+  export_configs          Path(s) to export config JSON file(s)
 
 options:
   -h, --help              show this help message and exit
   -c, --config CONFIG     Path to server config file (default: .config)
-  -o, --output OUTPUT     Output folder path (default: exports/export_<timestamp>/)
+  -o, --output OUTPUT     Output folder path (default: exports/<config>_<timestamp>/)
+  -a, --all               Run all export configs in export_configs/
   --categories            Filter by category names (overrides export config)
   --exclude-categories    Exclude these category names (overrides export config)
   --before-year           Only include objects made before this year (overrides export config)
