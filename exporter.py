@@ -423,7 +423,6 @@ def run_export(
         summary_lines.append(f"Description: {export_cfg['description']}")
     summary_lines.append(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     summary_lines.append(f"Records: {count}")
-    summary_lines.append(f"Index: {es_index}")
     summary_lines.append(f"Source: Mimsy XG objects")
     if categories:
         summary_lines.append(f"Categories: {', '.join(categories)}")
