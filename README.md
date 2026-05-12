@@ -79,6 +79,7 @@ Available fields:
 | `include_images` | bool | Include image path, licence, copyright, and credit columns |
 | `all_image_licences` | bool | Include images with any licence (default: only open licences) |
 | `all_images` | bool | Include every image per record as numbered `image_<n>_*` columns (default: first image only) — implies `include_images` |
+| `max_images` | int | Cap per-record image columns when `all_images` is true (default: 10; `0` = no cap) |
 | `download_images` | bool | Download images locally (implies `include_images`) |
 | `jsonl` | bool | Also write `objects.jsonl` containing the raw ES `_source` per record |
 | `output` | string | Output folder path (overrides default timestamped folder) |
@@ -161,9 +162,22 @@ image_2_path, image_2_licence, image_2_copyright, image_2_credit,
 image_N_path, image_N_licence, image_N_copyright, image_N_credit
 ```
 
-`N` is determined upfront from the query (via an aggregation that finds the max `multimedia` array length across matching records). Records with fewer than `N` images leave trailing columns empty. The open-licence filter (and `--all-image-licences` override) applies per image — entries that don't pass become empty cells.
+`N` is determined upfront from the query (via an aggregation that finds the max `multimedia` array length across matching records), but capped by `--max-images` (default `10`) to keep the CSV from blowing up when a single outlier record skews the column count. Records with fewer than `N` images leave trailing columns empty.
 
-`--download-images` combined with `--all-images` downloads every image in each record's multimedia array.
+```bash
+# Default cap of 10 columns
+python exporter.py --collections "Daily Herald Archive" --all-images
+
+# Raise the cap
+python exporter.py --collections "Daily Herald Archive" --all-images --max-images 50
+
+# No cap — use the actual maximum across matching records
+python exporter.py --collections "Daily Herald Archive" --all-images --max-images 0
+```
+
+When a record has more images than the cap, the extras are silently dropped from both the CSV columns and (if `--download-images` is on) the download queue. The open-licence filter (and `--all-image-licences` override) applies per image — entries that don't pass become empty cells.
+
+`--download-images` combined with `--all-images` downloads every image within the cap.
 
 ### JSONL output
 
@@ -209,7 +223,7 @@ usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [-a]
                    [--exclude-categories EXCLUDE [EXCLUDE ...]]
                    [--collections COLLECTIONS [COLLECTIONS ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
-                   [--download-images] [--all-images] [--jsonl]
+                   [--download-images] [--all-images] [--max-images MAX_IMAGES] [--jsonl]
                    [--batch-size BATCH_SIZE] [--dry-run]
                    [export_configs ...]
 
@@ -229,6 +243,7 @@ options:
   --all-image-licences    Include images with any licence (default: only open licences)
   --download-images       Download images locally (implies --include-images)
   --all-images            Include every image per record as numbered image_<n>_* columns (implies --include-images)
+  --max-images N          Cap per-record image columns when --all-images is on (default: 10; 0 = no cap)
   --jsonl                 Also write objects.jsonl with the raw ES _source per record
   --batch-size            Scroll batch size (default: 1000)
   --dry-run               Show the query and estimated count without exporting
