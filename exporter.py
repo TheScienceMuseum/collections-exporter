@@ -306,19 +306,20 @@ def count_max_multimedia(es: Elasticsearch, index: str, query: dict) -> int:
     return int(value) if value else 0
 
 
-def strip_notes(obj):
-    """Recursively remove any 'notes' keys from dicts at any nesting level.
+def strip_note(obj):
+    """Recursively remove any 'note' keys from dicts at any nesting level.
 
     Mutates and returns the object. Lists are traversed; non-container values
-    are left as-is.
+    are left as-is. The field commonly contains cataloguer-internal
+    annotations (sometimes with PII), so it's stripped from JSONL output.
     """
     if isinstance(obj, dict):
-        obj.pop("notes", None)
+        obj.pop("note", None)
         for v in obj.values():
-            strip_notes(v)
+            strip_note(v)
     elif isinstance(obj, list):
         for item in obj:
-            strip_notes(item)
+            strip_note(item)
     return obj
 
 
@@ -460,9 +461,9 @@ def export_objects(
                 downloads.extend(row_downloads)
                 writer.writerow(row)
                 if jsonl_file:
-                    # Strip any 'notes' fields at any nesting level before writing.
+                    # Strip any 'note' fields at any nesting level before writing.
                     # Done after CSV extraction so it can't affect CSV output.
-                    strip_notes(source)
+                    strip_note(source)
                     jsonl_file.write(json.dumps(source, ensure_ascii=False) + "\n")
                 count += 1
             if count % 5000 == 0:

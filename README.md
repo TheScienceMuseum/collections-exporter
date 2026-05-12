@@ -169,7 +169,7 @@ image_N_path, image_N_licence, image_N_copyright, image_N_credit
 
 Pass `--jsonl` (or set `"jsonl": true` in an export config) to write a second file `objects.jsonl` alongside `objects.csv`. Each line is the full raw `_source` from Elasticsearch — useful for archival, downstream re-processing, or piping into `jq`. The query/filters are unchanged; this just adds a second output format.
 
-Any `notes` field is stripped at every nesting level before the record is written (top-level, inside nested objects, inside arrays of objects). Everything else passes through unchanged.
+Any `note` field is stripped at every nesting level before the record is written (top-level, inside nested objects, inside arrays of objects). This field typically contains cataloguer-internal annotations (sometimes with PII). Everything else passes through unchanged.
 
 > When `--jsonl` is set, the script fetches the full ES document (no `_source` field filtering), so it's slightly slower than CSV-only mode.
 
