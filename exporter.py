@@ -556,6 +556,14 @@ def run_export(
     include_images = args.include_images or export_cfg.get("include_images", False) or dl_images or all_images
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
     write_jsonl = args.jsonl or export_cfg.get("jsonl", False)
+    # Cap for --all-images. None on CLI falls back to export config, then default 10.
+    # A value of 0 means "no cap" (use the actual max from the dataset).
+    if args.max_images is not None:
+        max_images_cap = args.max_images
+    elif "max_images" in export_cfg:
+        max_images_cap = export_cfg["max_images"]
+    else:
+        max_images_cap = 10
 
     timestamp = datetime.now().strftime("%Y%m%d")
 
@@ -597,10 +605,17 @@ def run_export(
         if dl_images:
             print(f"  Downloading images: yes")
         if all_images:
-            max_images = count_max_multimedia(es, es_index, query)
-            if max_images < 1:
-                max_images = 1
-            print(f"  All images: yes (up to {max_images} images per record)")
+            actual_max = count_max_multimedia(es, es_index, query)
+            if max_images_cap > 0 and actual_max > max_images_cap:
+                max_images = max_images_cap
+                print(
+                    f"  All images: yes (capped at {max_images_cap}; "
+                    f"largest record has {actual_max} images — extras will be dropped)"
+                )
+            else:
+                max_images = max(actual_max, 1)
+                cap_note = "uncapped" if max_images_cap == 0 else f"cap {max_images_cap}"
+                print(f"  All images: yes (up to {max_images} images per record, {cap_note})")
 
     jsonl_path = os.path.join(export_folder, "objects.jsonl") if write_jsonl else None
     if write_jsonl:
@@ -636,7 +651,8 @@ def run_export(
     if include_images:
         summary_lines.append(f"Images: {licence_mode}")
         if all_images:
-            summary_lines.append(f"All images per record: yes (max {max_images} columns)")
+            cap_label = "uncapped" if max_images_cap == 0 else f"cap {max_images_cap}"
+            summary_lines.append(f"All images per record: yes (max {max_images} columns, {cap_label})")
         if dl_images:
             summary_lines.append(f"Images downloaded: {len(downloads)}")
     if export_config_path:
@@ -709,6 +725,10 @@ def main():
     parser.add_argument(
         "--all-images", action="store_true",
         help="Include every image per record (image_1_*, image_2_*, ...). Default: first image only. Implies --include-images.",
+    )
+    parser.add_argument(
+        "--max-images", type=int, default=None,
+        help="When --all-images is on, cap per-record image columns to this many (default: 10). Use 0 for no cap. Overrides export config.",
     )
     parser.add_argument(
         "--jsonl", action="store_true",
