@@ -185,36 +185,125 @@ OPEN_LICENCES = [
 EMPTY_IMAGE_FIELDS = {"image_path": "", "image_licence": "", "image_copyright": "", "image_credit": ""}
 
 
+def _extract_single_image(item: dict, media_path: str, open_licence_only: bool, download_images: bool) -> dict:
+    """Extract one multimedia entry's fields. Returns dict with path/licence/copyright/credit
+    plus optional `_remote_url` and `_local_path` if a download is needed.
+    Empty values mean the image was filtered (e.g. licence not open) or missing data."""
+    if not isinstance(item, dict):
+        return {"path": "", "licence": "", "copyright": "", "credit": ""}
+
+    rights = item.get("legal", {}).get("rights", [{}])[0] if item.get("legal", {}).get("rights") else {}
+    licence = rights.get("licence", "")
+
+    if open_licence_only and licence not in OPEN_LICENCES:
+        return {"path": "", "licence": "", "copyright": "", "credit": ""}
+
+    location = item.get("@processed", {}).get("large", {}).get("location", "")
+    if not location:
+        return {"path": "", "licence": "", "copyright": "", "credit": ""}
+
+    if download_images:
+        image_path = f"images/{location}"
+        remote_url = f"{media_path}{location}"
+        local_path = f"images/{location}"
+    else:
+        image_path = f"{media_path}{location}"
+        remote_url = ""
+        local_path = ""
+
+    return {
+        "path": image_path,
+        "licence": licence,
+        "copyright": rights.get("copyright", ""),
+        "credit": item.get("credit", {}).get("value", ""),
+        "_remote_url": remote_url,
+        "_local_path": local_path,
+    }
+
+
 def get_image_fields(source: dict, media_path: str, open_licence_only: bool = True, download_images: bool = False) -> dict:
-    """Extract first multimedia large image path and legal fields."""
+    """Extract first multimedia large image path and legal fields (single-image / legacy mode)."""
     multimedia = source.get("multimedia", [])
     if not multimedia:
         return EMPTY_IMAGE_FIELDS
 
-    first = multimedia[0]
-    rights = first.get("legal", {}).get("rights", [{}])[0] if first.get("legal", {}).get("rights") else {}
-    licence = rights.get("licence", "")
-
-    if open_licence_only and licence not in OPEN_LICENCES:
+    img = _extract_single_image(multimedia[0], media_path, open_licence_only, download_images)
+    if not img["path"]:
         return EMPTY_IMAGE_FIELDS
-
-    location = first.get("@processed", {}).get("large", {}).get("location", "")
-    if not location:
-        return EMPTY_IMAGE_FIELDS
-
-    if download_images:
-        image_path = f"images/{location}"
-    else:
-        image_path = f"{media_path}{location}"
 
     return {
-        "image_path": image_path,
-        "_remote_url": f"{media_path}{location}" if download_images else "",
-        "_local_path": f"images/{location}" if download_images else "",
-        "image_licence": licence,
-        "image_copyright": rights.get("copyright", ""),
-        "image_credit": first.get("credit", {}).get("value", ""),
+        "image_path": img["path"],
+        "_remote_url": img.get("_remote_url", ""),
+        "_local_path": img.get("_local_path", ""),
+        "image_licence": img["licence"],
+        "image_copyright": img["copyright"],
+        "image_credit": img["credit"],
     }
+
+
+def get_all_image_fields(source: dict, media_path: str, max_images: int, open_licence_only: bool = True, download_images: bool = False) -> tuple:
+    """Extract up to `max_images` multimedia entries.
+
+    Returns (row_fields_dict, downloads_list) where row_fields_dict has the
+    indexed image_<n>_path/licence/copyright/credit keys for n in 1..max_images
+    (empty strings for slots beyond what the record has, or for entries that
+    failed the licence filter)."""
+    multimedia = source.get("multimedia", []) or []
+    row_fields = {}
+    downloads = []
+
+    for i in range(1, max_images + 1):
+        if i <= len(multimedia):
+            img = _extract_single_image(multimedia[i - 1], media_path, open_licence_only, download_images)
+            row_fields[f"image_{i}_path"] = img["path"]
+            row_fields[f"image_{i}_licence"] = img["licence"]
+            row_fields[f"image_{i}_copyright"] = img["copyright"]
+            row_fields[f"image_{i}_credit"] = img["credit"]
+            if img.get("_remote_url") and img.get("_local_path"):
+                downloads.append((img["_remote_url"], img["_local_path"]))
+        else:
+            row_fields[f"image_{i}_path"] = ""
+            row_fields[f"image_{i}_licence"] = ""
+            row_fields[f"image_{i}_copyright"] = ""
+            row_fields[f"image_{i}_credit"] = ""
+
+    return row_fields, downloads
+
+
+def all_images_csv_headers(max_images: int) -> list:
+    """Return the per-image CSV columns for the indexed image scheme."""
+    headers = []
+    for i in range(1, max_images + 1):
+        headers.extend([
+            f"image_{i}_path",
+            f"image_{i}_licence",
+            f"image_{i}_copyright",
+            f"image_{i}_credit",
+        ])
+    return headers
+
+
+def count_max_multimedia(es: Elasticsearch, index: str, query: dict) -> int:
+    """Find the maximum multimedia array length across records matching `query`.
+
+    Uses a script aggregation against _source. Returns 0 if no records match
+    or none have multimedia. Returns at least 1 if any record has at least
+    one image (so CSV headers always have room for it)."""
+    resp = es.search(index=index, body={
+        "size": 0,
+        "query": query,
+        "aggs": {
+            "max_images": {
+                "max": {
+                    "script": {
+                        "source": "params._source.containsKey('multimedia') ? params._source.multimedia.size() : 0"
+                    }
+                }
+            }
+        }
+    })
+    value = resp.get("aggregations", {}).get("max_images", {}).get("value")
+    return int(value) if value else 0
 
 
 def format_epoch_ms(epoch_ms: Optional[int]) -> str:
@@ -227,8 +316,22 @@ def format_epoch_ms(epoch_ms: Optional[int]) -> str:
         return ""
 
 
-def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, open_licence_only: bool = True, download_images: bool = False) -> dict:
-    """Extract a single CSV row from an ES _source document."""
+def extract_row(
+    source: dict,
+    base_url: str,
+    media_path: Optional[str] = None,
+    open_licence_only: bool = True,
+    download_images: bool = False,
+    all_images: bool = False,
+    max_images: int = 1,
+) -> tuple:
+    """Extract a single CSV row from an ES _source document.
+
+    Returns (row_dict, downloads_list). With `all_images=False` (default) the
+    row has the legacy single-image columns and downloads_list has at most one
+    tuple. With `all_images=True` the row has image_<n>_* columns for n in
+    1..max_images and downloads_list can have up to max_images tuples.
+    """
     admin = source.get("@admin", {})
     uid = admin.get("uid", "")
     title = get_primary_value(source.get("title"))
@@ -256,15 +359,22 @@ def extract_row(source: dict, base_url: str, media_path: Optional[str] = None, o
         "url": build_url(base_url, uid, summary_title),
     }
 
+    downloads = []
     if media_path is not None:
-        image_fields = get_image_fields(source, media_path, open_licence_only, download_images)
-        remote_url = image_fields.pop("_remote_url", "")
-        local_path = image_fields.pop("_local_path", "")
-        row.update(image_fields)
-        row["_remote_url"] = remote_url
-        row["_local_path"] = local_path
+        if all_images:
+            image_fields, downloads = get_all_image_fields(
+                source, media_path, max_images, open_licence_only, download_images
+            )
+            row.update(image_fields)
+        else:
+            image_fields = get_image_fields(source, media_path, open_licence_only, download_images)
+            remote_url = image_fields.pop("_remote_url", "")
+            local_path = image_fields.pop("_local_path", "")
+            row.update(image_fields)
+            if remote_url and local_path:
+                downloads.append((remote_url, local_path))
 
-    return row
+    return row, downloads
 
 
 def export_objects(
@@ -277,11 +387,18 @@ def export_objects(
     media_path: Optional[str] = None,
     open_licence_only: bool = True,
     download_images: bool = False,
+    all_images: bool = False,
+    max_images: int = 1,
 ) -> tuple:
     """Export matching objects to CSV using scroll API. Returns (row_count, downloads)."""
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    headers = IMAGE_CSV_HEADERS if media_path else CSV_HEADERS
+    if media_path and all_images:
+        headers = CSV_HEADERS + all_images_csv_headers(max_images)
+    elif media_path:
+        headers = IMAGE_CSV_HEADERS
+    else:
+        headers = CSV_HEADERS
     source_fields = IMAGE_SOURCE_FIELDS if media_path else SOURCE_FIELDS
 
     count = 0
@@ -303,11 +420,12 @@ def export_objects(
 
         while hits:
             for hit in hits:
-                row = extract_row(hit["_source"], base_url, media_path, open_licence_only, download_images)
-                remote_url = row.pop("_remote_url", "")
-                local_path = row.pop("_local_path", "")
-                if remote_url and local_path:
-                    downloads.append((remote_url, local_path))
+                row, row_downloads = extract_row(
+                    hit["_source"], base_url, media_path,
+                    open_licence_only, download_images,
+                    all_images=all_images, max_images=max_images,
+                )
+                downloads.extend(row_downloads)
                 writer.writerow(row)
                 count += 1
             if count % 5000 == 0:
@@ -379,7 +497,8 @@ def run_export(
     collections = args.collections or export_cfg.get("collections", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
     dl_images = args.download_images or export_cfg.get("download_images", False)
-    include_images = args.include_images or export_cfg.get("include_images", False) or dl_images
+    all_images = args.all_images or export_cfg.get("all_images", False)
+    include_images = args.include_images or export_cfg.get("include_images", False) or dl_images or all_images
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
 
     timestamp = datetime.now().strftime("%Y%m%d")
@@ -414,14 +533,24 @@ def run_export(
         print(f"  Made before: {before_year}")
 
     media_path = None
+    max_images = 1
     if include_images:
         media_path = config.get("export", "media_path")
         licence_mode = "all" if not open_licence_only else "open only (CC / OGL)"
         print(f"  Including images: yes ({licence_mode})")
         if dl_images:
             print(f"  Downloading images: yes")
+        if all_images:
+            max_images = count_max_multimedia(es, es_index, query)
+            if max_images < 1:
+                max_images = 1
+            print(f"  All images: yes (up to {max_images} images per record)")
 
-    count, downloads = export_objects(es, es_index, query, base_url, output_path, args.batch_size, media_path, open_licence_only, dl_images)
+    count, downloads = export_objects(
+        es, es_index, query, base_url, output_path,
+        args.batch_size, media_path, open_licence_only, dl_images,
+        all_images=all_images, max_images=max_images,
+    )
 
     if downloads:
         download_images(downloads, export_folder)
@@ -445,6 +574,8 @@ def run_export(
         summary_lines.append(f"Made before: {before_year}")
     if include_images:
         summary_lines.append(f"Images: {licence_mode}")
+        if all_images:
+            summary_lines.append(f"All images per record: yes (max {max_images} columns)")
         if dl_images:
             summary_lines.append(f"Images downloaded: {len(downloads)}")
     if export_config_path:
@@ -510,6 +641,10 @@ def main():
     parser.add_argument(
         "--download-images", action="store_true",
         help="Download images to a local images/ folder within the export (implies --include-images)",
+    )
+    parser.add_argument(
+        "--all-images", action="store_true",
+        help="Include every image per record (image_1_*, image_2_*, ...). Default: first image only. Implies --include-images.",
     )
     parser.add_argument(
         "--dry-run", action="store_true",

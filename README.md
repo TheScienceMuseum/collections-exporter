@@ -78,6 +78,7 @@ Available fields:
 | `before_year` | int | Only include objects made before this year |
 | `include_images` | bool | Include image path, licence, copyright, and credit columns |
 | `all_image_licences` | bool | Include images with any licence (default: only open licences) |
+| `all_images` | bool | Include every image per record as numbered `image_<n>_*` columns (default: first image only) — implies `include_images` |
 | `download_images` | bool | Download images locally (implies `include_images`) |
 | `output` | string | Output folder path (overrides default timestamped folder) |
 
@@ -140,7 +141,25 @@ python exporter.py --categories "Railway Models" --include-images --all-image-li
 
 # Download images locally
 python exporter.py --categories "Railway Models" --download-images
+
+# Include every image per record (image_1_*, image_2_*, ...)
+python exporter.py --collections "Daily Herald Archive" --all-images
 ```
+
+### All images per record
+
+By default the CSV captures only the first image (legacy columns `image_path`, `image_licence`, `image_copyright`, `image_credit`). Pass `--all-images` (or set `"all_images": true` in an export config) to emit every image in the `multimedia` array as numbered column groups:
+
+```
+image_1_path, image_1_licence, image_1_copyright, image_1_credit,
+image_2_path, image_2_licence, image_2_copyright, image_2_credit,
+...
+image_N_path, image_N_licence, image_N_copyright, image_N_credit
+```
+
+`N` is determined upfront from the query (via an aggregation that finds the max `multimedia` array length across matching records). Records with fewer than `N` images leave trailing columns empty. The open-licence filter (and `--all-image-licences` override) applies per image — entries that don't pass become empty cells.
+
+`--download-images` combined with `--all-images` downloads every image in each record's multimedia array.
 
 ### Download images
 
@@ -178,7 +197,8 @@ usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [-a]
                    [--exclude-categories EXCLUDE [EXCLUDE ...]]
                    [--collections COLLECTIONS [COLLECTIONS ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
-                   [--download-images] [--batch-size BATCH_SIZE] [--dry-run]
+                   [--download-images] [--all-images]
+                   [--batch-size BATCH_SIZE] [--dry-run]
                    [export_configs ...]
 
 positional arguments:
@@ -196,6 +216,7 @@ options:
   --include-images        Include image path, licence, copyright, and credit columns
   --all-image-licences    Include images with any licence (default: only open licences)
   --download-images       Download images locally (implies --include-images)
+  --all-images            Include every image per record as numbered image_<n>_* columns (implies --include-images)
   --batch-size            Scroll batch size (default: 1000)
   --dry-run               Show the query and estimated count without exporting
 ```
@@ -229,11 +250,13 @@ exports/export_20260401_120000/
 | measurements | Measurements display string |
 | url | Public collection URL |
 
-With `--include-images` or `--download-images`:
+With `--include-images` or `--download-images` (first image only):
 
 | Field | Source |
 |-------|--------|
-| image_path | URL to medium image, or local path if downloading |
+| image_path | URL to large image, or local path if downloading |
 | image_licence | Image licence (e.g. CC BY-NC-SA 4.0) |
 | image_copyright | Image copyright holder |
 | image_credit | Image credit line |
+
+With `--all-images` (every image per record), the four columns above become numbered groups: `image_1_path`, `image_1_licence`, `image_1_copyright`, `image_1_credit`, `image_2_path`, …, up to `image_N_*` where `N` is the largest multimedia array across all matching records. Records with fewer than `N` images leave trailing columns empty.
