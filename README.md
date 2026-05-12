@@ -80,6 +80,7 @@ Available fields:
 | `all_image_licences` | bool | Include images with any licence (default: only open licences) |
 | `all_images` | bool | Include every image per record as numbered `image_<n>_*` columns (default: first image only) — implies `include_images` |
 | `download_images` | bool | Download images locally (implies `include_images`) |
+| `jsonl` | bool | Also write `objects.jsonl` containing the raw ES `_source` per record |
 | `output` | string | Output folder path (overrides default timestamped folder) |
 
 To create a new export, add a JSON file to `export_configs/` and run it:
@@ -144,6 +145,9 @@ python exporter.py --categories "Railway Models" --download-images
 
 # Include every image per record (image_1_*, image_2_*, ...)
 python exporter.py --collections "Daily Herald Archive" --all-images
+
+# Also write a JSONL file with the raw ES record per line
+python exporter.py --categories "Railway Models" --jsonl
 ```
 
 ### All images per record
@@ -160,6 +164,14 @@ image_N_path, image_N_licence, image_N_copyright, image_N_credit
 `N` is determined upfront from the query (via an aggregation that finds the max `multimedia` array length across matching records). Records with fewer than `N` images leave trailing columns empty. The open-licence filter (and `--all-image-licences` override) applies per image — entries that don't pass become empty cells.
 
 `--download-images` combined with `--all-images` downloads every image in each record's multimedia array.
+
+### JSONL output
+
+Pass `--jsonl` (or set `"jsonl": true` in an export config) to write a second file `objects.jsonl` alongside `objects.csv`. Each line is the full raw `_source` from Elasticsearch — useful for archival, downstream re-processing, or piping into `jq`. The query/filters are unchanged; this just adds a second output format.
+
+Any `notes` field is stripped at every nesting level before the record is written (top-level, inside nested objects, inside arrays of objects). Everything else passes through unchanged.
+
+> When `--jsonl` is set, the script fetches the full ES document (no `_source` field filtering), so it's slightly slower than CSV-only mode.
 
 ### Download images
 
@@ -197,7 +209,7 @@ usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [-a]
                    [--exclude-categories EXCLUDE [EXCLUDE ...]]
                    [--collections COLLECTIONS [COLLECTIONS ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
-                   [--download-images] [--all-images]
+                   [--download-images] [--all-images] [--jsonl]
                    [--batch-size BATCH_SIZE] [--dry-run]
                    [export_configs ...]
 
@@ -217,6 +229,7 @@ options:
   --all-image-licences    Include images with any licence (default: only open licences)
   --download-images       Download images locally (implies --include-images)
   --all-images            Include every image per record as numbered image_<n>_* columns (implies --include-images)
+  --jsonl                 Also write objects.jsonl with the raw ES _source per record
   --batch-size            Scroll batch size (default: 1000)
   --dry-run               Show the query and estimated count without exporting
 ```

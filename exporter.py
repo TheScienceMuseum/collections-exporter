@@ -306,6 +306,22 @@ def count_max_multimedia(es: Elasticsearch, index: str, query: dict) -> int:
     return int(value) if value else 0
 
 
+def strip_notes(obj):
+    """Recursively remove any 'notes' keys from dicts at any nesting level.
+
+    Mutates and returns the object. Lists are traversed; non-container values
+    are left as-is.
+    """
+    if isinstance(obj, dict):
+        obj.pop("notes", None)
+        for v in obj.values():
+            strip_notes(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            strip_notes(item)
+    return obj
+
+
 def format_epoch_ms(epoch_ms: Optional[int]) -> str:
     """Convert an epoch-millisecond timestamp to ISO date string, or empty string if missing."""
     if not epoch_ms:
@@ -389,8 +405,16 @@ def export_objects(
     download_images: bool = False,
     all_images: bool = False,
     max_images: int = 1,
+    jsonl_path: Optional[str] = None,
 ) -> tuple:
-    """Export matching objects to CSV using scroll API. Returns (row_count, downloads)."""
+    """Export matching objects to CSV using scroll API.
+
+    If jsonl_path is set, also writes the raw ES _source for each hit
+    as one JSON object per line (and fetches the full _source from ES,
+    not just the CSV-required fields).
+
+    Returns (row_count, downloads).
+    """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     if media_path and all_images:
@@ -399,34 +423,47 @@ def export_objects(
         headers = IMAGE_CSV_HEADERS
     else:
         headers = CSV_HEADERS
-    source_fields = IMAGE_SOURCE_FIELDS if media_path else SOURCE_FIELDS
+
+    # When JSONL is requested we want the entire ES document, so omit _source
+    # filtering. Otherwise restrict to fields the CSV needs.
+    if jsonl_path:
+        source_fields = None
+    else:
+        source_fields = IMAGE_SOURCE_FIELDS if media_path else SOURCE_FIELDS
 
     count = 0
     downloads = []
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
+
+    csv_file = open(output_path, "w", newline="", encoding="utf-8")
+    jsonl_file = open(jsonl_path, "w", encoding="utf-8") if jsonl_path else None
+    try:
+        writer = csv.DictWriter(csv_file, fieldnames=headers)
         writer.writeheader()
 
-        resp = es.search(
-            index=index,
-            query=query,
-            _source=source_fields,
-            scroll="5m",
-            size=batch_size,
-        )
+        search_kwargs = dict(index=index, query=query, scroll="5m", size=batch_size)
+        if source_fields is not None:
+            search_kwargs["_source"] = source_fields
+
+        resp = es.search(**search_kwargs)
 
         scroll_id = resp["_scroll_id"]
         hits = resp["hits"]["hits"]
 
         while hits:
             for hit in hits:
+                source = hit["_source"]
                 row, row_downloads = extract_row(
-                    hit["_source"], base_url, media_path,
+                    source, base_url, media_path,
                     open_licence_only, download_images,
                     all_images=all_images, max_images=max_images,
                 )
                 downloads.extend(row_downloads)
                 writer.writerow(row)
+                if jsonl_file:
+                    # Strip any 'notes' fields at any nesting level before writing.
+                    # Done after CSV extraction so it can't affect CSV output.
+                    strip_notes(source)
+                    jsonl_file.write(json.dumps(source, ensure_ascii=False) + "\n")
                 count += 1
             if count % 5000 == 0:
                 print(f"  {count} records exported...")
@@ -439,6 +476,10 @@ def export_objects(
             es.clear_scroll(scroll_id=scroll_id)
         except Exception:
             pass  # Scroll expires naturally; some proxies block DELETE
+    finally:
+        csv_file.close()
+        if jsonl_file:
+            jsonl_file.close()
 
     return count, downloads
 
@@ -500,6 +541,7 @@ def run_export(
     all_images = args.all_images or export_cfg.get("all_images", False)
     include_images = args.include_images or export_cfg.get("include_images", False) or dl_images or all_images
     open_licence_only = not (args.all_image_licences or export_cfg.get("all_image_licences", False))
+    write_jsonl = args.jsonl or export_cfg.get("jsonl", False)
 
     timestamp = datetime.now().strftime("%Y%m%d")
 
@@ -546,10 +588,15 @@ def run_export(
                 max_images = 1
             print(f"  All images: yes (up to {max_images} images per record)")
 
+    jsonl_path = os.path.join(export_folder, "objects.jsonl") if write_jsonl else None
+    if write_jsonl:
+        print(f"  Writing JSONL: yes (raw ES _source per line)")
+
     count, downloads = export_objects(
         es, es_index, query, base_url, output_path,
         args.batch_size, media_path, open_licence_only, dl_images,
         all_images=all_images, max_images=max_images,
+        jsonl_path=jsonl_path,
     )
 
     if downloads:
@@ -580,7 +627,10 @@ def run_export(
             summary_lines.append(f"Images downloaded: {len(downloads)}")
     if export_config_path:
         summary_lines.append(f"Export config: {export_config_path}")
-    summary_lines.append(f"Output: objects.csv")
+    outputs = ["objects.csv"]
+    if write_jsonl:
+        outputs.append("objects.jsonl")
+    summary_lines.append(f"Output: {', '.join(outputs)}")
 
     summary_path = os.path.join(export_folder, "export_info.txt")
     with open(summary_path, "w") as f:
@@ -645,6 +695,10 @@ def main():
     parser.add_argument(
         "--all-images", action="store_true",
         help="Include every image per record (image_1_*, image_2_*, ...). Default: first image only. Implies --include-images.",
+    )
+    parser.add_argument(
+        "--jsonl", action="store_true",
+        help="Also write objects.jsonl with the raw ES _source for each record (one JSON per line)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
