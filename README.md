@@ -45,11 +45,14 @@ media_path = https://coimages.sciencemuseumgroup.org.uk/
 
 ### Export configs
 
-The simplest way to run an export is with an export config file. These are JSON files in `export_configs/` that define the filters and options for a particular export:
+The simplest way to run an export is with an export config file. These are JSON files in `export_configs/` that define the filters and options for a particular export. Example configs (suffixed `.example.json`) are checked into git as templates — copy one to a plain `.json` name to make your own:
 
 ```bash
+cp export_configs/railway_pre1976.example.json export_configs/railway_pre1976.json
 python exporter.py export_configs/railway_pre1976.json
 ```
+
+> **Note:** Plain `*.json` files in `export_configs/` are gitignored, so your private exports stay local. Only `*.example.json` files are tracked.
 
 An export config looks like this:
 
@@ -86,16 +89,16 @@ python exporter.py export_configs/my_export.json
 
 ### Running multiple exports
 
-Run all export configs in `export_configs/` in one go:
+Run all your private export configs in `export_configs/` in one go (skips `*.example.json` templates):
 
 ```bash
 python exporter.py --all
 ```
 
-Or specify multiple config files:
+Or specify multiple config files explicitly:
 
 ```bash
-python exporter.py export_configs/railway_pre1976.json export_configs/medical_heritage_pre1925.json
+python exporter.py export_configs/railway_pre1976.json export_configs/my_other_export.json
 ```
 
 Each config creates its own individual output folder as usual. A summary is printed at the end showing the total records exported across all configs.
@@ -106,10 +109,10 @@ Any CLI argument will override the corresponding export config value:
 
 ```bash
 # Use config but override the date filter
-python exporter.py export_configs/railway_pre1976.json --before-year 2000
+python exporter.py export_configs/railway_pre1976.example.json --before-year 2000
 
 # Use config but send output to a specific folder
-python exporter.py export_configs/railway_pre1976.json -o my_export_folder
+python exporter.py export_configs/railway_pre1976.example.json -o my_export_folder
 ```
 
 ### Running without an export config
@@ -164,7 +167,7 @@ exports/export_20260401_140513/
 Preview the query and document count without exporting:
 
 ```bash
-python exporter.py export_configs/railway_pre1976.json --dry-run
+python exporter.py export_configs/railway_pre1976.example.json --dry-run
 ```
 
 ### All options

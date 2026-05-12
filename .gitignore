@@ -8,3 +8,7 @@ exports/
 dist/
 build/
 .mypy_cache/
+
+# Private export configs — only *.example.json files are tracked
+export_configs/*.json
+!export_configs/*.example.json

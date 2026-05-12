@@ -522,9 +522,13 @@ def main():
     config_paths = list(args.export_configs)
 
     if args.run_all:
-        all_configs = sorted(glob.glob("export_configs/*.json"))
+        # Run every config in export_configs/ except *.example.json templates
+        all_configs = sorted(
+            p for p in glob.glob("export_configs/*.json")
+            if not p.endswith(".example.json")
+        )
         if not all_configs:
-            print("Error: no JSON files found in export_configs/")
+            print("Error: no export configs found in export_configs/ (excluding *.example.json templates)")
             sys.exit(1)
         config_paths = all_configs
 
