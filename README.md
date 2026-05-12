@@ -71,6 +71,7 @@ Available fields:
 | `description` | string | Human-readable description of the export |
 | `categories` | string[] | Category names to filter by |
 | `exclude_categories` | string[] | Category names to exclude |
+| `collections` | string[] | Named collection titles to filter by (e.g. "Daily Herald Archive") |
 | `before_year` | int | Only include objects made before this year |
 | `include_images` | bool | Include image path, licence, copyright, and credit columns |
 | `all_image_licences` | bool | Include images with any licence (default: only open licences) |
@@ -125,6 +126,9 @@ python exporter.py --categories "Passenger Comforts" "Railway Models" --before-y
 # Exclude specific categories
 python exporter.py --exclude-categories "Photographs" "Art"
 
+# Filter by named collection (cumulation.collector)
+python exporter.py --collections "Daily Herald Archive"
+
 # Include image data (open licences only by default)
 python exporter.py --categories "Railway Models" --include-images
 
@@ -169,6 +173,7 @@ python exporter.py export_configs/railway_pre1976.json --dry-run
 usage: exporter.py [-h] [-c CONFIG] [-o OUTPUT] [-a]
                    [--categories CATEGORIES [CATEGORIES ...]]
                    [--exclude-categories EXCLUDE [EXCLUDE ...]]
+                   [--collections COLLECTIONS [COLLECTIONS ...]]
                    [--before-year BEFORE_YEAR] [--include-images] [--all-image-licences]
                    [--download-images] [--batch-size BATCH_SIZE] [--dry-run]
                    [export_configs ...]
@@ -183,6 +188,7 @@ options:
   -a, --all               Run all export configs in export_configs/
   --categories            Filter by category names (overrides export config)
   --exclude-categories    Exclude these category names (overrides export config)
+  --collections           Filter by named collection title (overrides export config)
   --before-year           Only include objects made before this year (overrides export config)
   --include-images        Include image path, licence, copyright, and credit columns
   --all-image-licences    Include images with any licence (default: only open licences)

@@ -102,7 +102,12 @@ def build_url(base_url: str, uid: str, title: str) -> str:
     return f"{base_url}/objects/{uid}/{slug}"
 
 
-def build_query(categories: list, exclude_categories: list, before_year: Optional[int]) -> dict:
+def build_query(
+    categories: list,
+    exclude_categories: list,
+    before_year: Optional[int],
+    collections: Optional[list] = None,
+) -> dict:
     """Build the ES query for Mimsy object records with given filters."""
     must = [
         {"term": {"@admin.source": "Mimsy XG"}},
@@ -118,6 +123,9 @@ def build_query(categories: list, exclude_categories: list, before_year: Optiona
 
     if before_year is not None:
         must.append({"range": {"creation.date.to": {"lt": str(before_year)}}})
+
+    if collections:
+        must.append({"terms": {"cumulation.collector.summary.title.keyword": collections}})
 
     query = {"bool": {"must": must}}
     if must_not:
@@ -368,6 +376,7 @@ def run_export(
 
     categories = args.categories or export_cfg.get("categories", [])
     exclude_categories = args.exclude_categories or export_cfg.get("exclude_categories", [])
+    collections = args.collections or export_cfg.get("collections", [])
     before_year = args.before_year if args.before_year is not None else export_cfg.get("before_year")
     dl_images = args.download_images or export_cfg.get("download_images", False)
     include_images = args.include_images or export_cfg.get("include_images", False) or dl_images
@@ -385,7 +394,7 @@ def run_export(
     os.makedirs(export_folder, exist_ok=True)
     output_path = os.path.join(export_folder, "objects.csv")
 
-    query = build_query(categories, exclude_categories, before_year)
+    query = build_query(categories, exclude_categories, before_year, collections)
 
     if args.dry_run:
         print("Query:")
@@ -399,6 +408,8 @@ def run_export(
         print(f"  Categories: {', '.join(categories)}")
     if exclude_categories:
         print(f"  Excluding: {', '.join(exclude_categories)}")
+    if collections:
+        print(f"  Collections: {', '.join(collections)}")
     if before_year is not None:
         print(f"  Made before: {before_year}")
 
@@ -428,6 +439,8 @@ def run_export(
         summary_lines.append(f"Categories: {', '.join(categories)}")
     if exclude_categories:
         summary_lines.append(f"Excluded categories: {', '.join(exclude_categories)}")
+    if collections:
+        summary_lines.append(f"Collections: {', '.join(collections)}")
     if before_year is not None:
         summary_lines.append(f"Made before: {before_year}")
     if include_images:
@@ -473,6 +486,10 @@ def main():
     parser.add_argument(
         "--exclude-categories", nargs="+",
         help="Exclude these category names (overrides export config)",
+    )
+    parser.add_argument(
+        "--collections", nargs="+",
+        help="Filter by named collection (cumulation.collector), e.g. 'Daily Herald Archive' (overrides export config)",
     )
     parser.add_argument(
         "--before-year", type=int,
