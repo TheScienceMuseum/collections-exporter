@@ -125,7 +125,7 @@ def build_query(
         must.append({"range": {"creation.date.to": {"lt": str(before_year)}}})
 
     if collections:
-        must.append({"terms": {"cumulation.collector.summary.title.keyword": collections}})
+        must.append({"terms": {"cumulation.collector.name.value.keyword": collections}})
 
     query = {"bool": {"must": must}}
     if must_not:
