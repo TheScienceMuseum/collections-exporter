@@ -35,11 +35,24 @@ def create_es_client(node_url: str) -> Elasticsearch:
         host = parsed.hostname
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         path_prefix = parsed.path.rstrip("/")
-        return Elasticsearch(
+        client = Elasticsearch(
             f"{parsed.scheme}://{host}:{port}{path_prefix}",
             http_auth=(parsed.username, parsed.password),
         )
-    return Elasticsearch(node_url)
+    else:
+        client = Elasticsearch(node_url)
+
+    # elasticsearch-py 7.14+ runs a product check on the first response and
+    # raises UnsupportedProductError on subsequent requests if the response
+    # didn't include the X-Elastic-Product header. Our reverse proxy strips
+    # that header on some responses (notably script aggregations), which
+    # makes the check unreliable. Mark the client as verified up front so
+    # downstream calls don't trip over it.
+    try:
+        client.transport._verified_elasticsearch = True
+    except AttributeError:
+        pass  # older elasticsearch-py versions don't have this attribute
+    return client
 
 
 def get_primary_value(field_list: Optional[list]) -> str:
