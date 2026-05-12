@@ -2,5 +2,5 @@
   "name": "Daily Herald Archive",
   "description": "Photographs and material from the Daily Herald Archive named collection",
   "collections": ["Daily Herald Archive"],
-  "include_images": true
+  "include_images": false
 }
